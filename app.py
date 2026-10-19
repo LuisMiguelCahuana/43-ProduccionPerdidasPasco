@@ -652,10 +652,8 @@ def procesar_hoja_pasco(archivo_excel, hoja, nombre_archivo):
     col_suministro = columna("EELECTRICO", "SUMINISTRO") if es_ap else columna("SUMINISTRO")
     col_cuadrilla = columna("TÉCNICO RESPONSABLE", "TECNICO RESPONSABLE")
     col_fecha = columna("FECHA DE EJECUCIÓN", "FECHA", "FECHA DE EJECUCION")
-    if col_suministro is None:
-        raise ValueError(f"No se encontró SUMINISTRO/EELECTRICO en {hoja}")
-    if col_cuadrilla is None:
-        raise ValueError(f"No se encontró TÉCNICO RESPONSABLE en {hoja}")
+    if all(c is None for c in (col_fecha, col_suministro, col_cuadrilla)):
+        raise ValueError(f"No se encontró FECHA, SUMINISTRO ni CUADRILLA en {hoja}")
 
     columnas = []
     for col in range(df.shape[1]):
@@ -665,18 +663,33 @@ def procesar_hoja_pasco(archivo_excel, hoja, nombre_archivo):
     if not columnas:
         raise ValueError(f"No se encontraron códigos de subactividad en fila 2: {hoja}")
 
+    # Un registro cuenta si al menos uno de FECHA, SUMINISTRO o
+    # CUADRILLA contiene información real. El periodo no se evalúa.
+    col_item = columna("ITEM")
+
+    def tiene_registro(valor):
+        if pd.isna(valor):
+            return False
+        texto = normalizar_texto(valor).strip()
+        return texto not in {"", "NAN", "NONE", "NAT", "-", "TOTAL", "SUBTOTAL", "TOTALES"}
+
     registros = []
     for fila in range(3, len(df)):
-        suministro = df.iat[fila, col_suministro]
-        cuadrilla = df.iat[fila, col_cuadrilla]
-        if pd.isna(suministro) and pd.isna(cuadrilla):
+        suministro = df.iat[fila, col_suministro] if col_suministro is not None else None
+        cuadrilla = df.iat[fila, col_cuadrilla] if col_cuadrilla is not None else None
+        original_fecha = df.iat[fila, col_fecha] if col_fecha is not None else None
+
+        # No contar las filas identificadas como resúmenes o totales.
+        if col_item is not None and normalizar_texto(df.iat[fila, col_item]) in {"TOTAL", "SUBTOTAL", "TOTALES"}:
             continue
+
+        if not any(tiene_registro(v) for v in (original_fecha, suministro, cuadrilla)):
+            continue
+
         fecha = ""
-        if col_fecha is not None:
-            original = df.iat[fila, col_fecha]
-            if pd.notna(original):
-                fecha_convertida = convertir_fecha(original)
-                fecha = fecha_convertida if pd.notna(fecha_convertida) else str(original).strip()
+        if tiene_registro(original_fecha):
+            fecha_convertida = convertir_fecha(original_fecha)
+            fecha = fecha_convertida if pd.notna(fecha_convertida) else str(original_fecha).strip()
         for col, codigo in columnas:
             # PASCO: contar exclusivamente las celdas con valor 1.
             # No sumar valores 2, 3, decimales diferentes ni textos.
