@@ -688,15 +688,22 @@ def procesar_hoja_pasco(archivo_excel, hoja, nombre_archivo):
     if not columnas:
         raise ValueError(f"No se encontraron códigos de subactividad en fila 2: {hoja}")
 
-    # Un registro cuenta si al menos uno de FECHA, SUMINISTRO o
-    # CUADRILLA contiene información real. El periodo no se evalúa.
+    # Validar datos REALES de cada fila, nunca metadatos automáticos.
     col_item = columna("ITEM")
+    col_orden = columna("ORDEN DE TRABAJO", "ORDTRABAJO")
 
-    def tiene_registro(valor):
+    def dato_real(valor):
         if pd.isna(valor):
             return False
         texto = normalizar_texto(valor).strip()
-        return texto not in {"", "NAN", "NONE", "NAT", "-", "TOTAL", "SUBTOTAL", "TOTALES"}
+        return texto not in {
+            "", "NAN", "NONE", "NAT", "-", "0", "TOTAL",
+            "SUBTOTAL", "TOTALES", "SUMA", "FECHA", "SUMINISTRO",
+            "EELECTRICO", "TECNICO RESPONSABLE", "CUADRILLA"
+        }
+
+    def fecha_real(valor):
+        return dato_real(valor) and pd.notna(convertir_fecha(valor))
 
     registros = []
     for fila in range(3, len(df)):
@@ -704,17 +711,33 @@ def procesar_hoja_pasco(archivo_excel, hoja, nombre_archivo):
         cuadrilla = df.iat[fila, col_cuadrilla] if col_cuadrilla is not None else None
         original_fecha = df.iat[fila, col_fecha] if col_fecha is not None else None
 
-        # No contar las filas identificadas como resúmenes o totales.
-        if col_item is not None and normalizar_texto(df.iat[fila, col_item]) in {"TOTAL", "SUBTOTAL", "TOTALES"}:
+        # No sumar filas de totales o resúmenes.
+        campos_control = [col_item, col_suministro, col_cuadrilla, col_orden]
+        if any(
+            c is not None and normalizar_texto(df.iat[fila, c]).strip()
+            in {"TOTAL", "SUBTOTAL", "TOTALES", "SUMA"}
+            for c in campos_control
+        ):
             continue
 
-        if not any(tiene_registro(v) for v in (original_fecha, suministro, cuadrilla)):
+        # ITEM es un identificador de registro, no un total ni celda vacía.
+        # Hay filas auxiliares con técnico y subactividades marcadas con 1,
+        # pero sin ITEM ni SUMINISTRO: no son trabajos ejecutados.
+        if col_item is not None:
+            item_original = df.iat[fila, col_item]
+            item_numero = convertir_numero(item_original)
+            if (item_numero is None or not item_numero.is_integer()
+                    or item_numero <= 0):
+                continue
+
+        # Solo cuenta si hay un dato real en FECHA, SUMINISTRO o CUADRILLA.
+        # periodo, zona y codigo son automáticos y NO cuentan como registro.
+        if not (fecha_real(original_fecha) or dato_real(suministro) or dato_real(cuadrilla)):
             continue
 
         fecha = ""
-        if tiene_registro(original_fecha):
-            fecha_convertida = convertir_fecha(original_fecha)
-            fecha = fecha_convertida if pd.notna(fecha_convertida) else str(original_fecha).strip()
+        if fecha_real(original_fecha):
+            fecha = convertir_fecha(original_fecha)
         for col, codigo in columnas:
             # PASCO: contar exclusivamente las celdas con valor 1.
             # No sumar valores 2, 3, decimales diferentes ni textos.
