@@ -637,6 +637,31 @@ HOJAS_PASCO = {
     "AP-YANAHUANCA": "R", "AP-PAUCARTAMBO": "R", "AP-HUARIACA": "R",
     "CI-YANAHUANCA": "R", "CI-PAUCARTAMBO": "R", "CI-HUARIACA": "R",
 }
+PROCESOS_PASCO = {
+    # ACTIVIDAD CP
+    "MC-UB PAS": "Actividad-CP",
+    "MC-UR PAS": "Actividad-CP",
+
+    # LECTURAS
+    "AP-PASCO UB": "Lecturas",
+    "AP-PASCO UR": "Lecturas",
+    "AP-YANAHUANCA": "Lecturas",
+    "AP-PAUCARTAMBO": "Lecturas",
+    "AP-HUARIACA": "Lecturas",
+
+    # AVERÍAS
+    "SS-DEN. UB": "Averias",
+    "SS-DEN. UR": "Averias",
+
+    # ITINERANTE
+    "CI-YANAHUANCA": "Itinerante",
+    "CI-PAUCARTAMBO": "Itinerante",
+    "CI-HUARIACA": "Itinerante",
+
+    # NOTIFICACIONES
+    "NOT. UB": "Notificaciones",
+    "NOT. UR": "Notificaciones",
+}
 
 def procesar_hoja_pasco(archivo_excel, hoja, nombre_archivo):
     df = pd.read_excel(io.BytesIO(archivo_excel), sheet_name=hoja, header=None)
@@ -703,7 +728,8 @@ def procesar_hoja_pasco(archivo_excel, hoja, nombre_archivo):
                 "cuadrilla": "" if pd.isna(cuadrilla) else str(cuadrilla).strip(),
                 "zona": zona, "codigo": codigo, "cantidad": cantidad,
                 "actividad": "", "costo_unitario": None, "costo_total": None,
-                "proceso": "Pasco - " + hoja.split("-")[0].strip(),
+                #"proceso": "Pasco - " + hoja.split("-")[0].strip(),
+                "proceso": PROCESOS_PASCO[hoja.strip().upper()],
                 "hoja_origen": hoja, "archivo_origen": nombre_archivo,
             })
     return pd.DataFrame(registros, columns=COLUMNAS_FINALES)
