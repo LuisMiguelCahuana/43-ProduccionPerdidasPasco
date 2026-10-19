@@ -678,9 +678,12 @@ def procesar_hoja_pasco(archivo_excel, hoja, nombre_archivo):
                 fecha_convertida = convertir_fecha(original)
                 fecha = fecha_convertida if pd.notna(fecha_convertida) else str(original).strip()
         for col, codigo in columnas:
-            cantidad = convertir_numero(df.iat[fila, col])
-            if cantidad is None or cantidad == 0:
+            # PASCO: contar exclusivamente las celdas con valor 1.
+            # No sumar valores 2, 3, decimales diferentes ni textos.
+            valor = convertir_numero(df.iat[fila, col])
+            if valor != 1:
                 continue
+            cantidad = 1
             registros.append({
                 "fecha": fecha,
                 "suministro": "" if pd.isna(suministro) else str(suministro).strip(),
