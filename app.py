@@ -1,107 +1,95 @@
-                        st.write(f"- {error}")
+import io
+import re
+import calendar
+import unicodedata
+from datetime import datetime
 
-        except Exception as e:
-            st.error(f"Error durante el procesamiento: {e}")
+import pandas as pd
+import streamlit as st
+import gspread
+
+from google.oauth2.service_account import Credentials
 
 
 # ============================================================
-# VISTA PREVIA Y DESCARGA
+# CONFIGURACIÓN GENERAL
 # ============================================================
 
-if "df_consolidado" in st.session_state:
-    df_mostrar = st.session_state["df_consolidado"]
+st.set_page_config(
+    page_title="Consolidado de Producción y Costos",
+    page_icon="📊",
+    layout="wide"
+)
 
-    st.divider()
-    st.subheader("4. Vista previa del consolidado")
+SPREADSHEET_ID = "1gNq2nuNGfogcgcq7gsIqmQ5BZmMuWiSgAbDLpytJTIY"
+HOJA_DESTINO = "CONSOLIDADO_GENERAL"
 
-    c1, c2, c3 = st.columns(3)
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
 
-    c1.metric("Total de registros", f"{len(df_mostrar):,}")
+PROCESOS = {
+    "Actividad-CP": "11-12-13-14 Actividad CP",
+    "Lecturas": "14 Lecturas",
+    "Averías": "15. Averias",
+    "Notificaciones": "16. Notific",
+    "Itinerante": "17 Itinerant",
+}
 
-    c2.metric(
-        "Registros con costo",
-        f"{df_mostrar['costo_unitario'].notna().sum():,}"
-    )
+COLUMNAS_FINALES = [
+    "periodo",
+    "fecha",
+    "suministro",
+    "cuadrilla",
+    "zona",
+    "codigo",
+    "cantidad",
+    "actividad",
+    "costo_unitario",
+    "costo_total",
+    "proceso",
+    "hoja_origen",
+    "archivo_origen",
+]
 
-    c3.metric(
-        "Costo total",
-        f"{df_mostrar['costo_total'].sum(skipna=True):,.2f}"
-    )
+# ------------------------------------------------------------
+# ANCHOS FIJOS DE COLUMNAS PARA LA VISTA PREVIA
+# Evita que las columnas se deformen al hacer clic sobre
+# una fila o celda del st.dataframe.
+# ------------------------------------------------------------
 
-    # --------------------------------------------------------
-    # Copia para mostrar: la fecha se convierte a texto para
-    # que la celda no cambie de tamaño al ser seleccionada.
-    # --------------------------------------------------------
-    df_vista = df_mostrar.head(500).copy()
+CONFIG_COLUMNAS = {
+    "periodo": st.column_config.Column(
+        "Periodo", width="small", pinned=True
+    ),
+    "fecha": st.column_config.Column("Fecha", width="small"),
+    "suministro": st.column_config.Column("Suministro", width="small"),
+    "cuadrilla": st.column_config.Column("Cuadrilla", width="medium"),
+    "zona": st.column_config.Column("Zona", width="small"),
+    "codigo": st.column_config.Column("Código", width="small"),
+    "cantidad": st.column_config.NumberColumn(
+        "Cantidad", width="small", format="%.2f"
+    ),
+    "actividad": st.column_config.Column(
+        "Actividad", width="large"
+    ),
+    "costo_unitario": st.column_config.NumberColumn(
+        "Costo unitario", width="small", format="%.2f"
+    ),
+    "costo_total": st.column_config.NumberColumn(
+        "Costo total", width="small", format="%.2f"
+    ),
+    "proceso": st.column_config.Column("Proceso", width="medium"),
+    "hoja_origen": st.column_config.Column(
+        "Hoja origen", width="medium"
+    ),
+    "archivo_origen": st.column_config.Column(
+        "Archivo origen", width="medium"
+    ),
+}
 
-    df_vista["fecha"] = df_vista["fecha"].apply(
-        lambda v: (
-            ""
-            if pd.isna(v)
-            else v.strftime("%d/%m/%Y")
-            if isinstance(v, (pd.Timestamp, datetime))
-            else str(v)
-        )
-    )
 
-    st.dataframe(
-        df_vista,
-        use_container_width=True,
-        hide_index=True,
-        column_config=CONFIG_COLUMNAS,
-    )
-
-    salida_excel = io.BytesIO()
-
-    with pd.ExcelWriter(
-        salida_excel,
-        engine="openpyxl"
-    ) as writer:
-        df_mostrar.to_excel(
-            writer,
-            index=False,
-            sheet_name="Consolidado"
-        )
-
-    st.download_button(
-        label="📥 Descargar consolidado en Excel",
-        data=salida_excel.getvalue(),
-        file_name="CONSOLIDADO_GENERAL.xlsx",
-        mime=(
-            "application/vnd.openxmlformats-officedocument."
-            "spreadsheetml.sheet"
-        ),
-        use_container_width=True
-    )
-
-    if st.button(
-        "☁️ EXPORTAR A GOOGLE SHEETS",
-        type="primary",
-        use_container_width=True
-    ):
-        try:
-            with st.spinner(
-                "Enviando registros a Google Sheets..."
-            ):
-                mensaje = exportar_google_sheets(
-                    df_mostrar,
-                    modo_exportacion
-                )
-
-            st.success(mensaje)
-
-            st.link_button(
-                "Abrir Google Sheets",
-                (
-                    "https://docs.google.com/spreadsheets/d/"
-                    + SPREADSHEET_ID
-                    + "/edit"
-                ),
-                use_container_width=True
-            )
-
-        except Exception as e:
-            st.error(
-                "No se pudo exportar a Google Sheets. "
-                f"Detalle: {e}"
-            )
+# ============================================================
+# FUNCIONES GENERALES
+# ============================================================
