@@ -38,6 +38,7 @@ PROCESOS = {
 }
 
 COLUMNAS_FINALES = [
+    "unidad_negocio",
     "periodo",
     "fecha",
     "suministro",
@@ -60,6 +61,7 @@ COLUMNAS_FINALES = [
 # ------------------------------------------------------------
 
 CONFIG_COLUMNAS = {
+    "unidad_negocio": st.column_config.Column("Unidad de negocio", width="small", pinned=True),
     "periodo": st.column_config.Column(
         "Periodo", width="small", pinned=True
     ),
@@ -1190,10 +1192,11 @@ if st.button(
                     df_costos
                 )
 
-                # Asignar el periodo a todos los registros.
+                # Asignar unidad de negocio y periodo a todos los registros.
+                df_final["unidad_negocio"] = "Pasco"
                 df_final["periodo"] = periodo_exportacion
 
-                # Periodo será la primera columna.
+                # Mantener exactamente el orden de columnas solicitado para Sheets.
                 df_final = df_final[COLUMNAS_FINALES]
 
                 st.session_state["df_consolidado"] = df_final
